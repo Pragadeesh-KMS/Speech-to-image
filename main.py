@@ -14,9 +14,9 @@ pipe.to("cuda")
 from hugchat import hugchat
 from hugchat.login import Login
 
-email = "kmspragadeesh6000@gmail.com"
+email = input("Enter hugging face email id: ")
 
-passwd = "streetfighter@V4"
+passwd = input("Enter password: ")
 # Log in to huggingface and grant authorization to huggingchat
 sign = Login(email, passwd)
 cookies = sign.login()
