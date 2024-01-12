@@ -1,37 +1,19 @@
+!pip install diffusers hugchat transformers accelerate safetensors --upgrade -q
+!pip install git+https://github.com/huggingface/diffusers -q
+!pip install ipywidgets -q
+!pip install invisible_watermark -q
+
 from transformers import pipeline
-
-whisper = pipeline("automatic-speech-recognition", model = "openai/whisper-large-v2", chunk_length_s=30, device = "cuda:0")
-
-from diffusers import StableDiffusionXLPipeline
-
-from diffusers import AutoPipelineForText2Image
-import torch
+from ipywidgets import interactive, widgets
 from IPython.display import HTML, Javascript, Image, display
 from google.colab.output import eval_js
 import base64
+from diffusers import StableDiffusionXLPipeline
+import torch
+
 pipe = StableDiffusionXLPipeline.from_pretrained("segmind/SSD-1B", torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
 pipe.to("cuda")
-from hugchat import hugchat
-from hugchat.login import Login
-
-email = input("Enter hugging face email id: ")
-
-passwd = input("Enter password: ")
-# Log in to huggingface and grant authorization to huggingchat
-sign = Login(email, passwd)
-cookies = sign.login()
-
-# Save cookies to the local directory
-cookie_path_dir = "./cookies_snapshot"
-sign.saveCookiesToDir(cookie_path_dir)
-
-# Load cookies when you restart your program:
-# sign = login(email, None)
-# cookies = sign.loadCookiesFromDir(cookie_path_dir) # This will detect if the JSON file exists, return cookies if it does and raise an Exception if it's not.
-
-# Create a ChatBot
-chatbot = hugchat.ChatBot(cookies=cookies.get_dict())  # or cookie_path="usercookies/<email>.json"
-print(chatbot.chat("Hi!"))
+whisper = pipeline("automatic-speech-recognition", model="openai/whisper-large-v2", chunk_length_s=30, device="cuda:0")
 js = Javascript(
     """
     async function recordAudio() {
@@ -81,62 +63,79 @@ js = Javascript(
           };
           """
 )
-# record Audio HERE
 
-display(js)
-whisper = pipeline("automatic-speech-recognition", model = "openai/whisper-large-v2", chunk_length_s=30, device = "cuda:0")
-
-output = eval_js('recordAudio({})')
-with open('audio.wav','wb') as file:
-  binary = base64.b64decode(output)
-  file.write(binary)
-print('Recording save to:', file.name)
-speech_to_text = whisper("audio.wav")
-
-image_prompt = speech_to_text['text']
-print(image_prompt)
+# Display the initial JavaScript code for audio recording
 display(js)
 
+# Execute JavaScript to record audio
 output = eval_js('recordAudio({})')
-with open('audio.wav','wb') as file:
-  binary = base64.b64decode(output)
-  file.write(binary)
-print('Recording save to:', file.name)
+with open('audio.wav', 'wb') as file:
+    binary = base64.b64decode(output)
+    file.write(binary)
+print('Recording saved to:', file.name)
 speech_to_text = whisper("audio.wav")
 
-image_prompt = speech_to_text['text']
-print(image_prompt)
-System_job = '''
-[Your Expertise]: You are an expert in creating prompt using normal plain text sentences. If a user gives you certain sentences, you should engineer the sentence into a image creating perfect prompt.
+# Extract text from speech-to-text result
+img = speech_to_text['text']
+# Initialize variables for image and display
+generated_image = None
+image_display = display("", display_id=True)
 
-[User's job]: Users will give you a sentence for which they want the image
+def generate_image(button):
+    global generated_image
 
-[Your job]: You should take the input, which is the user's plain text for creating a image and should perform prompt engineering to make that plain text to a engineer prompt which an AI ca understand to create a image.
-          Once after they give you their sentence {image_prompt} to develop a engineered prompt. You should ask the user the following 4 questions IN A SINGLE ATTEMPT with 6-8 options each question for the user to choose. You should give these options based on the user's sentence.
-          1. What is your preferred style of image?: It can be photorealistic, low poly, cinematic, cartoon, abstract, surreal, pixel art, graffiti, sketching, minimal, pop art and so on.
-          2. What is your preferred quality of image?: It can be High resolution, 2K, 4K, 8K, clear, good lighting, detailed, extremely detailed, sharp focus, intricate, beautiful, realistic+++, complementary colors, high quality, hyper detailed, masterpiece, best quality, artstation, stunning.
-          3. What is your preferred shot type?: It can be Wide Shot/Establishing Shot, Long Shot, Full Shot, Medium Shot, Cowboy Shot, Medium Close-Up, Close-Up, Extreme Close-Up, Two-Shot, Over-the-Shoulder Shot, Point-of-View Shot (POV) and so on.
-          4. What is your perferred background?: Good lighting, natural, realistic+++ and so on. For this you can give options by recognising the user's prompt and what background will suit for that.
- You should ask only 4 questions to the user which are given above and give options to them also. Once after you got all the queries cleared, then you can proceed to create the perfect prompt to generate an image and give it to them.
+    # Retrieve values from sliders
+    image_style = style_slider.value
+    image_quality = quality_slider.value
+    render = render_slider.value
+    angle = angle_slider.value
+    lighting = lighting_slider.value
+    background = background_slider.value
+    device = device_slider.value
+    emotion = emotion_slider.value
 
-[Additional Information] - There are certain things in image prompting which you can conclude the based on the user's sentence and the options they choose for your four questions, they are:
-1. The emphasis on the word "very" seems to improve generation quality! Repetition can also be used to emphasize subject terms. For example, if you want to generate an image of a planet with aliens, using the prompt A planet with aliens aliens aliens aliens aliens aliens aliens aliens aliens aliens aliens aliens will make it more likely that aliens are in the resultant image.
-2. If we want mountains without trees, we can use the prompt mountain | tree:-10. Since we weighted tree very negatively, they do not appear in the generated image. Weighted terms can be combined into more complicated prompts, like A planet in space:10 | bursting with color red, blue, and purple:4 | aliens:-10 | 4K, high quality
-3. Using a robust negative prompt, we can generate much more convincing iamges without deformed images. For example: studio medium portrait of Brad Pitt waving his hands, detailed, film, studio lighting, 90mm lens, by Martin Schoeller:6 | disfigured, deformed hands, blurry, grainy, broken, cross-eyed, undead, photoshopped, overexposed, underexposed, lowres, bad anatomy, bad hands, extra digits, fewer digits, bad digit, bad ears, bad eyes, bad face, cropped: -5
-   Using a similar negative prompt can help with other body parts as well. Unfortunately, this technique is not consistent, so you may need to attempt multiple generations before getting a good result. In the future, this type of prompting should be unnecessary since models will improve. However, currently it is a very useful technique.
-4. Clarity of Description: Ensure your prompt is clear and detailed enough to convey the scene or concept you want to depict. Specificity helps the artist understand your vision.
-5. Emotion or Mood: Determine the emotional tone or mood you want the image to convey. This could be happiness, sadness, mystery, etc. Communicate this in your prompt.
+    # Construct the prompt based on user selections
+    prompt = f"A stunning {image_style}, {image_quality} shot of {img} captured in {device} using {angle} and rendered by {render}, illuminated by {lighting} light, with {emotion} emotions in a {background} background setting."
 
+    # Use the DiffusionPipeline to generate an image based on the prompt
+    neg_prompt = "ugly, blurry, poor quality, deformed structure, very bad lighting, bad colouring, noise"  # Negative prompt here
+    generated_image = pipe(prompt=prompt, negative_prompt=neg_prompt).images[0]
 
-Atlast, keep in mind that the final prompt given by you should be short and sweet, and compulsory less than 75 tokens, but still should convey all the necessary informations to generate the perfect image.
-'''
-print(chatbot.chat(System_job))
-print(chatbot.chat(image_prompt))
-Engineered_prompt = chatbot.chat(input())  # Assuming this input is for the prompt
-print(Engineered_prompt)  # Print the full prompt
-prompt = Engineered_prompt
-neg_prompt = "ugly, blurry, poor quality, deformed structure, very bad lighting, bad colouring, noise" # Negative prompt here
-image = pipe(prompt=prompt, negative_prompt=neg_prompt).images[0]
-image.save("4.png")
-final_image_path = "4.png"
-display(Image(filename=final_image_path))
+    # Save and display the generated image
+    generated_image.save("generated_image.png")
+    final_image_path = "generated_image.png"
+    image_display.update(Image(filename=final_image_path))
+
+# slider options
+image_style_options = ["photorealistic", "low poly", "cinematic", "cartoon", "pixel art", "graffiti", "sketching"]
+image_quality_options = ["High resolution", "8K", "clear","pixelated NFT", "heavy detailed", "beautiful", "realistic+++", "hyper detailed", "masterpiece"]
+render_options = ["Pixar","Octane", "real-time ray tracing", "Christopher Nolan", "James Cameron", "unreal engine", "unity" ]
+angle_options = ["Wide-angle lens", "full shot", "Top angle" "Telephoto lens", "Prime lens", "Zoom lens", "Macro lens", "Fisheye lens", "Tilt-shift lens", "Portrait lens", "Anamorphic lens", "Cinematic lens", "Fixed focal length lens", "Variable focal length lens"]
+lighting_options = ["Soft", "ambient", "ring" "light", "neon", "Natural", "Soft", "Harsh", "Dramatic", "Backlit", "Studio"]
+background_options = ["outdoor", "indoor", "space", "nature", "sci-fi", "neon", "abstract"]
+device_options = ["Go Pro", "Iphone 15", "Canon EOS R5","Nikon Z7", "Sony F950", "Drone", "CCTV",]
+emotion_options = ["Happy", "Sad", "Mysterious", "Surprised", "Annoyed", "Neutral", "dreamy", "nostalgic"]
+
+# sliders
+style_slider = widgets.SelectionSlider(options=image_style_options, description="Style:")
+quality_slider = widgets.SelectionSlider(options=image_quality_options, description="Quality:")
+render_slider = widgets.SelectionSlider(options=image_quality_options, description="Render by:")
+angle_slider = widgets.SelectionSlider(options=angle_options, description="Angle:")
+lighting_slider = widgets.SelectionSlider(options=lighting_options, description="Lighting:")
+background_slider = widgets.SelectionSlider(options=background_options, description="Background:")
+device_slider = widgets.SelectionSlider(options=background_options, description="Device:")
+emotion_slider = widgets.SelectionSlider(options=background_options, description="Emotion:")
+
+generate_button = widgets.Button(description="Generate Image")
+
+generate_button.on_click(generate_image)
+
+# interactive widget
+interactive_widget = widgets.VBox([
+    style_slider, quality_slider, angle_slider, render_slider,
+    lighting_slider, background_slider, device_slider, emotion_slider,
+    generate_button
+])
+
+# Display the  widget
+display(interactive_widget)
