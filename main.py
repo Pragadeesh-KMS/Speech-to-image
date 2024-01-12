@@ -134,3 +134,9 @@ print(chatbot.chat(System_job))
 print(chatbot.chat(image_prompt))
 Engineered_prompt = chatbot.chat(input())  # Assuming this input is for the prompt
 print(Engineered_prompt)  # Print the full prompt
+prompt = Engineered_prompt
+neg_prompt = "ugly, blurry, poor quality, deformed structure, very bad lighting, bad colouring, noise" # Negative prompt here
+image = pipe(prompt=prompt, negative_prompt=neg_prompt).images[0]
+image.save("4.png")
+final_image_path = "4.png"
+display(Image(filename=final_image_path))
